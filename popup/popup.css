@@ -1,0 +1,160 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: #0f1117;
+  color: #e2e8f0;
+  width: 360px;
+  min-height: 200px;
+  overflow-x: hidden;
+}
+.app { display: flex; flex-direction: column; }
+
+header {
+  background: linear-gradient(135deg, #0060af, #005ae0);
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+header .logo { font-size: 1.1rem; }
+header .title { font-size: 0.95rem; font-weight: 700; color: #fff; flex: 1; }
+header .settings-btn {
+  background: none; border: none; cursor: pointer;
+  font-size: 1rem; padding: 2px 4px; border-radius: 6px;
+  color: rgba(255,255,255,0.8);
+  transition: background 0.2s;
+}
+header .settings-btn:hover { background: rgba(255,255,255,0.15); }
+
+/* Upload */
+.section { padding: 12px; }
+.upload-area {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 2px dashed #2d3148;
+  border-radius: 10px;
+  padding: 20px;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+}
+.upload-area:hover { border-color: #0060af; background: rgba(0,96,175,0.05); }
+.upload-icon { font-size: 1.8rem; }
+#upload-text { font-size: 0.85rem; color: #64748b; text-align: center; }
+
+/* Stats bar */
+.stats-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  background: #161827;
+  font-size: 0.8rem;
+}
+.stat { color: #94a3b8; }
+.stat.valid { color: #34d399; }
+.stat.skip { color: #f87171; }
+.sep { color: #374151; }
+
+/* Phone list */
+.phone-list { margin: 0 12px 8px; }
+.list-header {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.78rem;
+  color: #64748b;
+  margin-bottom: 6px;
+  padding: 0 2px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.list-body {
+  max-height: 140px;
+  overflow-y: auto;
+  background: #161827;
+  border-radius: 8px;
+  border: 1px solid #2d3148;
+}
+.phone-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  font-size: 0.83rem;
+  border-bottom: 1px solid #1a1d2e;
+}
+.phone-item:last-child { border-bottom: none; }
+.phone-item .phone { flex: 1; font-family: monospace; color: #e2e8f0; }
+.phone-item .name { color: #94a3b8; font-size: 0.78rem; }
+.phone-item .status-dot { width: 7px; height: 7px; border-radius: 50%; background: #2d3148; flex-shrink: 0; }
+.phone-item .status-dot.success { background: #34d399; }
+.phone-item .status-dot.error { background: #f87171; }
+.phone-item .status-dot.already { background: #a78bfa; }
+.phone-item .status-dot.running { background: #60a5fa; animation: pulse 1s infinite; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+/* Progress */
+.progress-wrap { padding: 0 12px 8px; }
+.progress-bar { background: #1e2130; border-radius: 999px; height: 6px; overflow: hidden; margin-bottom: 4px; }
+.progress-fill { height: 100%; background: linear-gradient(90deg, #0060af, #34d399); border-radius: 999px; transition: width 0.5s ease; }
+.progress-text { font-size: 0.75rem; color: #64748b; display: block; text-align: right; }
+
+/* Results */
+.result-row {
+  display: flex;
+  gap: 6px;
+  padding: 6px 12px;
+  background: #161827;
+}
+.result-row .r {
+  flex: 1;
+  text-align: center;
+  font-size: 0.8rem;
+  padding: 4px;
+  border-radius: 6px;
+  background: #1e2130;
+}
+.r.success { color: #34d399; }
+.r.not-found { color: #f87171; }
+.r.already { color: #a78bfa; }
+.r.error { color: #fb923c; }
+
+/* Controls */
+.controls {
+  display: flex;
+  gap: 6px;
+  padding: 10px 12px;
+  flex-wrap: wrap;
+}
+button {
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  font-size: 0.83rem;
+  font-weight: 600;
+  flex: 1;
+  transition: opacity 0.2s;
+}
+button:hover { opacity: 0.85; }
+.btn-start { background: #059669; color: #fff; }
+.btn-pause { background: #d97706; color: #fff; }
+.btn-resume { background: #2563eb; color: #fff; }
+.btn-stop { background: #dc2626; color: #fff; }
+.btn-reset { background: #374151; color: #e2e8f0; }
+
+/* Status Message */
+.status-msg {
+  min-height: 28px;
+  padding: 0 12px 10px;
+  font-size: 0.8rem;
+  color: #60a5fa;
+  text-align: center;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #2d3148; border-radius: 2px; }

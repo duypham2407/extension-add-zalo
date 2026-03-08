@@ -1,0 +1,145 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #0f1117;
+  color: #e2e8f0;
+  min-height: 100vh;
+  padding: 0;
+}
+.container {
+  max-width: 540px;
+  margin: 0 auto;
+  padding: 24px 20px 40px;
+}
+header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 28px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #2d3148;
+}
+header .logo {
+  font-size: 1.6rem;
+}
+header h1 {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.section {
+  background: #1e2130;
+  border: 1px solid #2d3148;
+  border-radius: 12px;
+  padding: 18px;
+  margin-bottom: 16px;
+}
+.section-title {
+  display: block;
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: #60a5fa;
+  margin-bottom: 8px;
+}
+.hint {
+  font-size: 0.8rem;
+  color: #64748b;
+  margin-bottom: 10px;
+}
+textarea {
+  width: 100%;
+  min-height: 90px;
+  background: #0f1117;
+  border: 1px solid #2d3148;
+  color: #e2e8f0;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 0.9rem;
+  resize: vertical;
+  outline: none;
+  font-family: inherit;
+}
+textarea:focus {
+  border-color: #0060af;
+}
+.char-count {
+  text-align: right;
+  font-size: 0.75rem;
+  color: #64748b;
+  margin-top: 4px;
+}
+
+.row {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.field {
+  flex: 1;
+  min-width: 140px;
+}
+.field label {
+  display: block;
+  font-size: 0.8rem;
+  color: #94a3b8;
+  margin-bottom: 6px;
+}
+input[type="number"],
+input[type="url"],
+input[type="text"] {
+  width: 100%;
+  background: #0f1117;
+  border: 1px solid #2d3148;
+  color: #e2e8f0;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 0.9rem;
+  outline: none;
+}
+input:focus {
+  border-color: #0060af;
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 20px;
+}
+button {
+  padding: 10px 20px;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 600;
+  transition: opacity 0.2s;
+}
+button:hover {
+  opacity: 0.85;
+}
+.btn-primary {
+  background: #0060af;
+  color: #fff;
+}
+.btn-secondary {
+  background: #2d3148;
+  color: #e2e8f0;
+  padding: 8px 14px;
+  font-size: 0.85rem;
+  margin-top: 10px;
+}
+#save-msg,
+#test-result {
+  font-size: 0.85rem;
+  color: #34d399;
+}
+#test-result.error {
+  color: #f87171;
+}

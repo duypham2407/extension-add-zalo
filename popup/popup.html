@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <title>Zalo Auto Add Friend</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <div class="app">
+    <header>
+      <span class="logo">🤝</span>
+      <span class="title">Zalo Auto Add Friend</span>
+      <button class="settings-btn" id="open-settings" title="Cài đặt">⚙️</button>
+    </header>
+
+    <!-- Upload Section -->
+    <div class="section" id="upload-section">
+      <label class="upload-area" for="file-input" id="upload-label">
+        <span class="upload-icon">📂</span>
+        <span id="upload-text">Chọn file Excel (.xlsx)</span>
+      </label>
+      <input type="file" id="file-input" accept=".xlsx,.xls" hidden />
+    </div>
+
+    <!-- Stats bar -->
+    <div class="stats-bar" id="stats-bar" style="display:none">
+      <span class="stat"><span id="count-total">0</span> SĐT</span>
+      <span class="sep">·</span>
+      <span class="stat valid"><span id="count-valid">0</span> hợp lệ</span>
+      <span class="sep">·</span>
+      <span class="stat skip"><span id="count-empty">0</span> trống</span>
+    </div>
+
+    <!-- Phone List -->
+    <div class="phone-list" id="phone-list" style="display:none">
+      <div class="list-header">
+        <span>Danh sách SĐT</span>
+        <span class="progress-label" id="progress-label"></span>
+      </div>
+      <div class="list-body" id="list-body"></div>
+    </div>
+
+    <!-- Progress -->
+    <div class="progress-wrap" id="progress-wrap" style="display:none">
+      <div class="progress-bar">
+        <div class="progress-fill" id="progress-fill" style="width:0%"></div>
+      </div>
+      <span class="progress-text" id="progress-text">0 / 0</span>
+    </div>
+
+    <!-- Results -->
+    <div class="result-row" id="result-row" style="display:none">
+      <span class="r success">✅ <span id="r-success">0</span></span>
+      <span class="r not-found">❌ <span id="r-not-found">0</span></span>
+      <span class="r already">ℹ️ <span id="r-already">0</span></span>
+      <span class="r error">💥 <span id="r-error">0</span></span>
+    </div>
+
+    <!-- Controls -->
+    <div class="controls" id="controls" style="display:none">
+      <button class="btn-start" id="btn-start">▶ Bắt đầu</button>
+      <button class="btn-pause" id="btn-pause" style="display:none">⏸ Tạm dừng</button>
+      <button class="btn-resume" id="btn-resume" style="display:none">▶ Tiếp tục</button>
+      <button class="btn-stop" id="btn-stop" style="display:none">⏹ Dừng</button>
+      <button class="btn-reset" id="btn-reset">🔄 Reset</button>
+    </div>
+
+    <!-- Status message -->
+    <div class="status-msg" id="status-msg"></div>
+  </div>
+
+  <script src="../lib/xlsx.min.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

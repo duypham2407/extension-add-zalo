@@ -1,0 +1,31 @@
+{
+  "manifest_version": 3,
+  "name": "Zalo Auto Add Friend",
+  "version": "1.0.0",
+  "description": "Tự động thêm bạn trên Zalo Web từ danh sách số điện thoại Excel",
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_title": "Zalo Auto Add Friend"
+  },
+  "options_page": "settings/settings.html",
+  "background": {
+    "service_worker": "background/background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://chat.zalo.me/*"],
+      "js": ["content/content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "permissions": [
+    "storage",
+    "tabs",
+    "scripting",
+    "alarms",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "https://chat.zalo.me/*"
+  ]
+}
