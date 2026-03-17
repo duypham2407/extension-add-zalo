@@ -95,7 +95,7 @@
   // ─── Main Automation Flow ─────────────────────────────────────────────────────
 
   async function addFriend(phone, greeting, autoMessages = [], autoMessageImage = null) {
-    const result = { status: 'error', zaloName: '', errorMsg: '' };
+    const result = { status: 'error', zaloName: '', errorMsg: '', messageError: '' };
 
     try {
       // ── Bước 1: Mở modal "Thêm bạn" ─────────────────────────────────────────
@@ -219,14 +219,16 @@
       result.status = 'success';
       result.message = greeting.slice(0, 150);
 
+      closeModal();
+      await delay((autoMessages && autoMessages.length > 0) || autoMessageImage ? 1200 : 400);
+
       // ── Bước 10-12: Tự động nhắn tin (nếu có cấu hình) ─────────────────────
       if ((autoMessages && autoMessages.length > 0) || autoMessageImage) {
-        closeModal(); // Đóng mọi modal còn sót lại trước khi mở lại search
-        await delay(1200); 
-        await sendAutoMessages(phone, autoMessages, autoMessageImage);
-      } else {
-        closeModal();
-        await delay(400);
+        try {
+          await handlePostSuccessMessaging(phone, autoMessages, autoMessageImage);
+        } catch (err) {
+          result.messageError = String(err.message || err);
+        }
       }
 
     } catch (err) {
@@ -239,15 +241,14 @@
 
   // ─── Auto Message Flow ────────────────────────────────────────────────────────
 
-  async function sendAutoMessages(phone, messages, imageData) {
+  async function handlePostSuccessMessaging(phone, messages, imageData) {
     try {
       console.log(`[ZaloExt] Bắt đầu tự động nhắn tin cho SĐT: ${phone}`);
 
       // ── Bước 10.1: Mở modal mở cửa sổ tìm kiếm ─────────────────────────────
-      const addFriendBtn = document.querySelector('div[data-translate-title="STR_ADD_FRIEND_BTN"]');
+      const addFriendBtn = document.querySelector('[data-translate-title="Thêm bạn"], [title="Thêm bạn"], div[data-translate-title="STR_ADD_FRIEND_BTN"]');
       if (!addFriendBtn) {
-        console.warn('[ZaloExt] Không tìm thấy nút Thêm bạn (icon User-addition) để Auto-Message.');
-        return;
+        throw new Error('Không tìm thấy nút Thêm bạn để mở chat sau khi kết bạn');
       }
       simulateClick(addFriendBtn);
       await delay(600);
@@ -255,9 +256,7 @@
       // ── Bước 10.2: Điền SĐT ────────────────────────────────────────────────
       const phoneInput = await waitForElement('input[placeholder="Số điện thoại"], input.phone-i-input', 4000).catch(() => null);
       if (!phoneInput) {
-        console.warn('[ZaloExt] Không tìm thấy input SĐT trong modal Auto-Message.');
-        closeModal();
-        return;
+        throw new Error('Không tìm thấy input SĐT trong modal nhắn tin');
       }
       phoneInput.focus();
       setReactValue(phoneInput, phone);
@@ -266,9 +265,7 @@
       // ── Bước 10.3: Tìm kiếm ────────────────────────────────────────────────
       const searchBtn = await waitForElement('div[data-translate-inner="STR_SEARCH"]', 3000).catch(() => null);
       if (!searchBtn) {
-        console.warn('[ZaloExt] Không tìm thấy nút Tìm kiếm trong modal Auto-Message.');
-        closeModal();
-        return;
+        throw new Error('Không tìm thấy nút Tìm kiếm trong modal nhắn tin');
       }
       simulateClick(searchBtn);
       await delay(1500); // Chờ list kết quả hiện ra
@@ -276,9 +273,7 @@
       // ── Bước 10.4: Nhấp vào nút "Nhắn tin" trên kết quả tìm kiếm ───────────
       const chatBtn = document.querySelector('div[data-translate-inner="STR_CHAT"]');
       if (!chatBtn) {
-        console.warn('[ZaloExt] Không tìm thấy nút Nhắn tin trên kết quả tìm kiếm.');
-        closeModal();
-        return;
+        throw new Error('Không tìm thấy nút Nhắn tin trên kết quả tìm kiếm');
       }
       simulateClick(chatBtn);
       
@@ -288,8 +283,7 @@
       // ── Bước 11: Chờ rich input xuất hiện ────────────────────────────────────
       const chatInput = await waitForElement('div#richInput', 6000).catch(() => null);
       if (!chatInput) {
-        console.warn('[ZaloExt] Không tìm thấy rich input — bỏ qua auto-message.');
-        return;
+        throw new Error('Không tìm thấy ô chat để gửi tin nhắn tự động');
       }
 
       await delay(500);
@@ -322,7 +316,8 @@
         console.log(`[ZaloExt] Đã gửi: "${msg.text.slice(0, 30)}"`);
       }
     } catch (err) {
-      console.warn('[ZaloExt] sendAutoMessages error:', err.message);
+      try { closeModal(); } catch (_) {}
+      throw err;
     }
   }
 
@@ -349,6 +344,10 @@
         cancelable: true,
       });
       const dispatched = chatInput.dispatchEvent(pasteEvent);
+
+      if (!dispatched) {
+        throw new Error('Zalo đã chặn sự kiện paste ảnh tự động');
+      }
 
       // Kiểm tra nếu Zalo xử lý paste (preview xuất hiện)
       await delay(1000);
@@ -390,14 +389,14 @@
           await delay(600);
           console.log('[ZaloExt] Đã gửi ảnh qua clipboard.write fallback.');
         } else {
-          console.warn('[ZaloExt] Cả hai phương pháp paste đều thất bại.');
+          throw new Error('Cả hai phương pháp paste ảnh đều thất bại');
         }
       } catch (clipErr) {
-        console.warn('[ZaloExt] clipboard.write lỗi:', clipErr.message);
+        throw new Error(`Không thể gửi ảnh tự động: ${String(clipErr.message || clipErr)}`);
       }
 
     } catch (err) {
-      console.warn('[ZaloExt] sendImage error:', err.message);
+      throw err;
     }
   }
 

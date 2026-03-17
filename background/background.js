@@ -86,11 +86,12 @@ async function processNext() {
     if (!zaloTab) {
       broadcastToPopup({ action: 'QUEUE_ERROR', error: 'Không tìm thấy tab chat.zalo.me. Hãy mở Zalo Web trước.' });
       queueState = 'idle';
+      chrome.storage.local.set({ queueState: 'idle' });
       return;
     }
 
     // Send to content script
-    let result = { status: 'error', zaloName: '', errorMsg: '', message: '' };
+    let result = { status: 'error', zaloName: '', errorMsg: '', message: '', messageError: '' };
     try {
       // Load image data từ local storage (bất đồng bộ)
       const localData = await getStorage(['autoMessageImage']);
@@ -117,7 +118,14 @@ async function processNext() {
     // Update contacts status
     contacts[currentIndex].status = result.status;
     if (result.status === 'error') {
-       contacts[currentIndex].errorMsg = result.errorMsg; // Save err in array
+      contacts[currentIndex].errorMsg = result.errorMsg; // Save err in array
+    } else {
+      delete contacts[currentIndex].errorMsg;
+    }
+    if (result.messageError) {
+      contacts[currentIndex].messageError = result.messageError;
+    } else {
+      delete contacts[currentIndex].messageError;
     }
     results[result.status] = (results[result.status] || 0) + 1;
 
