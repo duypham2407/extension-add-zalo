@@ -23,7 +23,8 @@
     "tabs",
     "scripting",
     "alarms",
-    "activeTab"
+    "activeTab",
+    "clipboardWrite"
   ],
   "host_permissions": [
     "https://chat.zalo.me/*"

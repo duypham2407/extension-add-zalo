@@ -57,6 +57,34 @@
       <span id="test-result"></span>
     </div>
 
+    <div class="section">
+      <div class="section-header">
+        <label class="section-title">💬 Tự động nhắn tin</label>
+        <label class="toggle-switch">
+          <input type="checkbox" id="auto-msg-enabled" />
+          <span class="toggle-track"><span class="toggle-thumb"></span></span>
+        </label>
+      </div>
+      <p class="hint">Sau khi gửi lời mời kết bạn thành công, tự động nhắn theo thứ tự: ảnh (nếu có) → các tin nhắn.</p>
+
+      <!-- Image Upload -->
+      <div class="img-upload-section">
+        <label class="img-upload-label" id="img-upload-label" for="img-file-input">
+          <span class="img-upload-icon">🖼️</span>
+          <span id="img-upload-text">Chọn ảnh gửi kèm (tùy chọn)</span>
+          <input type="file" id="img-file-input" accept="image/*" hidden />
+        </label>
+        <div id="img-preview-wrap" style="display:none">
+          <img id="img-preview" src="" alt="preview" />
+          <button class="btn-remove-img" id="btn-remove-img" title="Xóa ảnh">✕</button>
+        </div>
+      </div>
+
+      <div id="msg-list"></div>
+
+      <button class="btn-add-msg" id="btn-add-msg">＋ Thêm tin nhắn</button>
+    </div>
+
     <div class="footer">
       <button class="btn-primary" id="save-btn">💾 Lưu cài đặt</button>
       <span id="save-msg"></span>

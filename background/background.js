@@ -92,10 +92,16 @@ async function processNext() {
     // Send to content script
     let result = { status: 'error', zaloName: '', errorMsg: '', message: '' };
     try {
+      // Load image data từ local storage (bất đồng bộ)
+      const localData = await getStorage(['autoMessageImage']);
+      const autoMessageImage = settings.autoMessagesEnabled ? (localData.autoMessageImage || null) : null;
+
       const contentResult = await chrome.tabs.sendMessage(zaloTab.id, {
         action: 'ADD_FRIEND',
         phone: contact.phone,
         greeting: settings.greeting,
+        autoMessages: settings.autoMessagesEnabled ? (settings.autoMessages || []) : [],
+        autoMessageImage,
       });
       if (!contentResult) throw new Error("Content script không phản hồi. Hãy tải lại (F5) tab Zalo.");
       result = contentResult;
@@ -168,6 +174,8 @@ function getSettings() {
       batchRest: 90,
       backendUrl: 'http://localhost:3000',
       apiKey: 'zalo-tool-secret-2026',
+      autoMessagesEnabled: false,
+      autoMessages: [],
     }, resolve)
   );
 }

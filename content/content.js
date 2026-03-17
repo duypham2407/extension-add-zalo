@@ -78,9 +78,23 @@
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true }));
   }
 
+  /**
+   * Set nội dung cho contenteditable div (Zalo rich input)
+   * Dùng execCommand để React nhận được input event
+   */
+  function setContentEditable(el, text) {
+    if (!el) return;
+    el.focus();
+    // Xóa nội dung cũ
+    document.execCommand('selectAll', false, null);
+    document.execCommand('delete', false, null);
+    // Gõ text mới — React lắng nghe qua execCommand
+    document.execCommand('insertText', false, text);
+  }
+
   // ─── Main Automation Flow ─────────────────────────────────────────────────────
 
-  async function addFriend(phone, greeting) {
+  async function addFriend(phone, greeting, autoMessages = [], autoMessageImage = null) {
     const result = { status: 'error', zaloName: '', errorMsg: '' };
 
     try {
@@ -201,11 +215,19 @@
       simulateClick(ketBanBtnConfirm);
       await delay(600);
 
-      // Thành công — popup thành công sẽ xuất hiện, đóng nó
+      // Thành công — gửi lời mời thành công
       result.status = 'success';
       result.message = greeting.slice(0, 150);
-      closeModal();
-      await delay(400);
+
+      // ── Bước 10-12: Tự động nhắn tin (nếu có cấu hình) ─────────────────────
+      if ((autoMessages && autoMessages.length > 0) || autoMessageImage) {
+        closeModal(); // Đóng mọi modal còn sót lại trước khi mở lại search
+        await delay(1200); 
+        await sendAutoMessages(phone, autoMessages, autoMessageImage);
+      } else {
+        closeModal();
+        await delay(400);
+      }
 
     } catch (err) {
       result.errorMsg = String(err.message || err);
@@ -215,14 +237,178 @@
     return result;
   }
 
+  // ─── Auto Message Flow ────────────────────────────────────────────────────────
+
+  async function sendAutoMessages(phone, messages, imageData) {
+    try {
+      console.log(`[ZaloExt] Bắt đầu tự động nhắn tin cho SĐT: ${phone}`);
+
+      // ── Bước 10.1: Mở modal mở cửa sổ tìm kiếm ─────────────────────────────
+      const addFriendBtn = document.querySelector('div[data-translate-title="STR_ADD_FRIEND_BTN"]');
+      if (!addFriendBtn) {
+        console.warn('[ZaloExt] Không tìm thấy nút Thêm bạn (icon User-addition) để Auto-Message.');
+        return;
+      }
+      simulateClick(addFriendBtn);
+      await delay(600);
+
+      // ── Bước 10.2: Điền SĐT ────────────────────────────────────────────────
+      const phoneInput = await waitForElement('input[placeholder="Số điện thoại"], input.phone-i-input', 4000).catch(() => null);
+      if (!phoneInput) {
+        console.warn('[ZaloExt] Không tìm thấy input SĐT trong modal Auto-Message.');
+        closeModal();
+        return;
+      }
+      phoneInput.focus();
+      setReactValue(phoneInput, phone);
+      await delay(400);
+
+      // ── Bước 10.3: Tìm kiếm ────────────────────────────────────────────────
+      const searchBtn = await waitForElement('div[data-translate-inner="STR_SEARCH"]', 3000).catch(() => null);
+      if (!searchBtn) {
+        console.warn('[ZaloExt] Không tìm thấy nút Tìm kiếm trong modal Auto-Message.');
+        closeModal();
+        return;
+      }
+      simulateClick(searchBtn);
+      await delay(1500); // Chờ list kết quả hiện ra
+
+      // ── Bước 10.4: Nhấp vào nút "Nhắn tin" trên kết quả tìm kiếm ───────────
+      const chatBtn = document.querySelector('div[data-translate-inner="STR_CHAT"]');
+      if (!chatBtn) {
+        console.warn('[ZaloExt] Không tìm thấy nút Nhắn tin trên kết quả tìm kiếm.');
+        closeModal();
+        return;
+      }
+      simulateClick(chatBtn);
+      
+      // Khung chat đã mở, chờ 1 chút
+      await delay(1000);
+
+      // ── Bước 11: Chờ rich input xuất hiện ────────────────────────────────────
+      const chatInput = await waitForElement('div#richInput', 6000).catch(() => null);
+      if (!chatInput) {
+        console.warn('[ZaloExt] Không tìm thấy rich input — bỏ qua auto-message.');
+        return;
+      }
+
+      await delay(500);
+
+      // ── Bước 11.5: Gửi ảnh nếu có ─────────────────────────────────────────
+      if (imageData && imageData.base64) {
+        await sendImage(chatInput, imageData.base64, imageData.mimeType || 'image/png');
+        await delay(800); // Chờ Zalo xử lý xong ảnh
+      }
+
+      // ── Bước 12: Gửi lần lượt từng tin nhắn ─────────────────────────────────
+      for (const msg of messages) {
+        if (!msg.text || !msg.text.trim()) continue;
+
+        const waitMs = (parseInt(msg.delay, 10) || 1) * 1000;
+        await delay(waitMs);
+
+        setContentEditable(chatInput, msg.text.trim());
+        await delay(300);
+
+        chatInput.dispatchEvent(new KeyboardEvent('keydown', {
+          key: 'Enter',
+          keyCode: 13,
+          which: 13,
+          bubbles: true,
+          cancelable: true,
+        }));
+
+        await delay(400);
+        console.log(`[ZaloExt] Đã gửi: "${msg.text.slice(0, 30)}"`);
+      }
+    } catch (err) {
+      console.warn('[ZaloExt] sendAutoMessages error:', err.message);
+    }
+  }
+
+  // ─── Send Image via Clipboard Paste ────────────────────────────────────────────
+
+  async function sendImage(chatInput, base64, mimeType) {
+    try {
+      // Convert base64 → Blob → File
+      const byteStr = atob(base64);
+      const arr = new Uint8Array(byteStr.length);
+      for (let i = 0; i < byteStr.length; i++) arr[i] = byteStr.charCodeAt(i);
+      const blob = new Blob([arr], { type: mimeType });
+      const file = new File([blob], 'image.png', { type: mimeType });
+
+      // ─ Option B: DataTransfer ClipboardEvent paste ───────────────────────────
+      const dt = new DataTransfer();
+      dt.items.add(file);
+
+      chatInput.focus();
+
+      const pasteEvent = new ClipboardEvent('paste', {
+        clipboardData: dt,
+        bubbles: true,
+        cancelable: true,
+      });
+      const dispatched = chatInput.dispatchEvent(pasteEvent);
+
+      // Kiểm tra nếu Zalo xử lý paste (preview xuất hiện)
+      await delay(1000);
+
+      // Kiểm tra preview: Zalo thường render .image-preview hoặc thumb
+      const hasPreview = document.querySelector(
+        '.image-upload-preview, .thumb-wrapper, [class*="upload-preview"], [class*="attach-preview"]'
+      );
+
+      if (hasPreview) {
+        // Zalo nhận ảnh — gửi bằng Enter
+        chatInput.dispatchEvent(new KeyboardEvent('keydown', {
+          key: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true,
+        }));
+        await delay(600);
+        console.log('[ZaloExt] Đã gửi ảnh qua DataTransfer paste.');
+        return;
+      }
+
+      // ─ Fallback Option A: navigator.clipboard.write() ─────────────────────────
+      console.log('[ZaloExt] DataTransfer paste không hoạt động, fallback sang clipboard.write...');
+      try {
+        await navigator.clipboard.write([
+          new ClipboardItem({ [mimeType]: blob }),
+        ]);
+
+        // Gửi Ctrl+V keyboard shortcut thật đến document
+        document.execCommand('paste');
+        await delay(1200);
+
+        // Check preview lần 2
+        const hasPreview2 = document.querySelector(
+          '.image-upload-preview, .thumb-wrapper, [class*="upload-preview"], [class*="attach-preview"]'
+        );
+        if (hasPreview2) {
+          chatInput.dispatchEvent(new KeyboardEvent('keydown', {
+            key: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true,
+          }));
+          await delay(600);
+          console.log('[ZaloExt] Đã gửi ảnh qua clipboard.write fallback.');
+        } else {
+          console.warn('[ZaloExt] Cả hai phương pháp paste đều thất bại.');
+        }
+      } catch (clipErr) {
+        console.warn('[ZaloExt] clipboard.write lỗi:', clipErr.message);
+      }
+
+    } catch (err) {
+      console.warn('[ZaloExt] sendImage error:', err.message);
+    }
+  }
+
   // ─── Message Listener ─────────────────────────────────────────────────────────
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (msg.action === 'ADD_FRIEND') {
-      const { phone, greeting } = msg;
-      addFriend(phone, greeting).then((result) => {
+      const { phone, greeting, autoMessages, autoMessageImage } = msg;
+      addFriend(phone, greeting, autoMessages, autoMessageImage).then((result) => {
         sendResponse(result);
       });
-      return true; // Keep message channel open for async
+      return true;
     }
   });
 
