@@ -225,7 +225,10 @@
       // ── Bước 10-12: Tự động nhắn tin (nếu có cấu hình) ─────────────────────
       if ((autoMessages && autoMessages.length > 0) || autoMessageImage) {
         try {
-          await handlePostSuccessMessaging(phone, autoMessages, autoMessageImage);
+          const postMessageResult = await handlePostSuccessMessaging(phone, autoMessages, autoMessageImage);
+          if (postMessageResult && postMessageResult.messageError) {
+            result.messageError = postMessageResult.messageError;
+          }
         } catch (err) {
           result.messageError = String(err.message || err);
         }
@@ -242,6 +245,8 @@
   // ─── Auto Message Flow ────────────────────────────────────────────────────────
 
   async function handlePostSuccessMessaging(phone, messages, imageData) {
+    let messageError = '';
+
     try {
       console.log(`[ZaloExt] Bắt đầu tự động nhắn tin cho SĐT: ${phone}`);
 
@@ -289,9 +294,13 @@
       await delay(500);
 
       // ── Bước 11.5: Gửi ảnh nếu có ─────────────────────────────────────────
-      if (imageData && imageData.base64) {
-        await sendImage(chatInput, imageData.base64, imageData.mimeType || 'image/png');
-        await delay(800); // Chờ Zalo xử lý xong ảnh
+      if (imageData && imageData.bytes && imageData.bytes.length > 0) {
+        try {
+          await sendImage(chatInput, imageData);
+          await delay(800); // Chờ Zalo xử lý xong ảnh
+        } catch (err) {
+          messageError = String(err.message || err);
+        }
       }
 
       // ── Bước 12: Gửi lần lượt từng tin nhắn ─────────────────────────────────
@@ -315,6 +324,8 @@
         await delay(400);
         console.log(`[ZaloExt] Đã gửi: "${msg.text.slice(0, 30)}"`);
       }
+
+      return { messageError };
     } catch (err) {
       try { closeModal(); } catch (_) {}
       throw err;
@@ -323,14 +334,18 @@
 
   // ─── Send Image via Clipboard Paste ────────────────────────────────────────────
 
-  async function sendImage(chatInput, base64, mimeType) {
+  async function sendImage(chatInput, imageData) {
     try {
-      // Convert base64 → Blob → File
-      const byteStr = atob(base64);
-      const arr = new Uint8Array(byteStr.length);
-      for (let i = 0; i < byteStr.length; i++) arr[i] = byteStr.charCodeAt(i);
-      const blob = new Blob([arr], { type: mimeType });
-      const file = new File([blob], 'image.png', { type: mimeType });
+      if (!imageData || !imageData.bytes || !imageData.bytes.length) {
+        throw new Error('Thiếu dữ liệu ảnh để gửi');
+      }
+
+      const mimeType = imageData.mimeType || 'image/png';
+      const fileName = imageData.name || 'image.png';
+
+      // Convert byte array → Blob → File
+      const blob = new Blob([Uint8Array.from(imageData.bytes)], { type: mimeType });
+      const file = new File([blob], fileName, { type: mimeType });
 
       // ─ Option B: DataTransfer ClipboardEvent paste ───────────────────────────
       const dt = new DataTransfer();

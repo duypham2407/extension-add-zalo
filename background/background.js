@@ -1,10 +1,13 @@
 // background.js — Service Worker: Queue Manager + Keep-alive
 // Manifest V3 Service Worker
 
+importScripts('../lib/image-store.js');
+
 let queueState = 'idle'; // 'idle' | 'running' | 'paused' | 'stopped'
 let currentIndex = 0;
 let contacts = [];
 let settings = {};
+const imageStore = self.ZaloImageStore;
 
 // ─── Keep-alive (prevent Service Worker từ bị kill) ───────────────────────────
 chrome.alarms.create('keepAlive', { periodInMinutes: 0.4 });
@@ -93,19 +96,23 @@ async function processNext() {
     // Send to content script
     let result = { status: 'error', zaloName: '', errorMsg: '', message: '', messageError: '' };
     try {
-      // Load image data từ local storage (bất đồng bộ)
-      const localData = await getStorage(['autoMessageImage']);
-      const autoMessageImage = settings.autoMessagesEnabled ? (localData.autoMessageImage || null) : null;
+      const imageResolution = settings.autoMessagesEnabled
+        ? await resolveAutoMessageImage()
+        : { imageData: null, messageError: '' };
 
       const contentResult = await chrome.tabs.sendMessage(zaloTab.id, {
         action: 'ADD_FRIEND',
         phone: contact.phone,
         greeting: settings.greeting,
         autoMessages: settings.autoMessagesEnabled ? (settings.autoMessages || []) : [],
-        autoMessageImage,
+        autoMessageImage: imageResolution.imageData,
       });
       if (!contentResult) throw new Error("Content script không phản hồi. Hãy tải lại (F5) tab Zalo.");
       result = contentResult;
+
+      if (imageResolution.messageError && result.status !== 'error') {
+        result.messageError = mergeMessageError(result.messageError, imageResolution.messageError);
+      }
     } catch (err) {
       result.status = 'error';
       result.errorMsg = String(err.message || err);
@@ -197,6 +204,51 @@ function broadcastToPopup(msg) {
   chrome.runtime.sendMessage(msg).catch(() => {
     // Popup might be closed — ignore
   });
+}
+
+function mergeMessageError(currentMessage, nextMessage) {
+  if (!currentMessage) return nextMessage || '';
+  if (!nextMessage || currentMessage.includes(nextMessage)) return currentMessage;
+  return `${currentMessage} | ${nextMessage}`;
+}
+
+async function resolveAutoMessageImage() {
+  const localData = await getStorage(['autoMessageImageRef']);
+  const imageRef = localData.autoMessageImageRef;
+
+  if (!imageRef || !imageRef.imageId) {
+    return { imageData: null, messageError: '' };
+  }
+
+  try {
+    const record = await imageStore.getAutoMessageImage(imageRef.imageId);
+
+    if (!record || !record.blob) {
+      return {
+        imageData: null,
+        messageError: 'Không tìm thấy ảnh auto-message đã lưu. Vui lòng chọn lại ảnh trong Cài đặt.',
+      };
+    }
+
+    return {
+      imageData: {
+        name: record.name || imageRef.name || 'image.png',
+        mimeType: record.mimeType || imageRef.mimeType || 'image/png',
+        bytes: await blobToByteArray(record.blob),
+      },
+      messageError: '',
+    };
+  } catch (err) {
+    return {
+      imageData: null,
+      messageError: `Không thể tải ảnh auto-message: ${String(err.message || err)}`,
+    };
+  }
+}
+
+async function blobToByteArray(blob) {
+  const buffer = await blob.arrayBuffer();
+  return Array.from(new Uint8Array(buffer));
 }
 
 // async function postLog(logData, cfg) {

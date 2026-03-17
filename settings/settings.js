@@ -9,30 +9,27 @@ const DEFAULT_SETTINGS = {
   autoMessagesEnabled: false,
   autoMessages: [],
 };
+const imageStore = window.ZaloImageStore;
+const AUTO_MESSAGE_IMAGE_ID = imageStore.AUTO_MESSAGE_IMAGE_ID;
+let currentPreviewUrl = '';
 
 // ─── Load Settings ────────────────────────────────────────────────────────────
-function loadSettings() {
-  chrome.storage.sync.get(DEFAULT_SETTINGS, (s) => {
-    document.getElementById('greeting').value = s.greeting;
-    document.getElementById('delay-min').value = s.delayMin;
-    document.getElementById('delay-max').value = s.delayMax;
-    document.getElementById('batch-size').value = s.batchSize;
-    document.getElementById('batch-rest').value = s.batchRest;
-    document.getElementById('backend-url').value = s.backendUrl;
-    document.getElementById('api-key').value = s.apiKey;
-    updateCharCount(s.greeting.length);
+async function loadSettings() {
+  const s = await getSyncStorage(DEFAULT_SETTINGS);
+  document.getElementById('greeting').value = s.greeting;
+  document.getElementById('delay-min').value = s.delayMin;
+  document.getElementById('delay-max').value = s.delayMax;
+  document.getElementById('batch-size').value = s.batchSize;
+  document.getElementById('batch-rest').value = s.batchRest;
+  document.getElementById('backend-url').value = s.backendUrl;
+  document.getElementById('api-key').value = s.apiKey;
+  updateCharCount(s.greeting.length);
 
-    // Auto-message
-    document.getElementById('auto-msg-enabled').checked = !!s.autoMessagesEnabled;
-    renderMsgList(s.autoMessages || []);
-  });
+  document.getElementById('auto-msg-enabled').checked = !!s.autoMessagesEnabled;
+  renderMsgList(s.autoMessages || []);
 
-  // Load image từ local storage (có thể lớn, dùng local chứ không dùng sync)
-  chrome.storage.local.get(['autoMessageImage'], (d) => {
-    if (d.autoMessageImage && d.autoMessageImage.base64) {
-      showImgPreview(`data:${d.autoMessageImage.mimeType};base64,${d.autoMessageImage.base64}`);
-    }
-  });
+  await migrateLegacyAutoMessageImage();
+  await loadImagePreview();
 }
 
 function updateCharCount(len) {
@@ -145,42 +142,46 @@ document.getElementById('btn-add-msg').addEventListener('click', () => {
 
 // ─── Image Upload ───────────────────────────────────────────────────────────
 
-document.getElementById('img-file-input').addEventListener('change', (e) => {
+document.getElementById('img-file-input').addEventListener('change', async (e) => {
   const file = e.target.files[0];
   if (!file) return;
 
-  const reader = new FileReader();
-  reader.onload = (ev) => {
-    const dataUrl = ev.target.result; // data:image/png;base64,...
-    const [header, base64] = dataUrl.split(',');
-    const mimeType = header.match(/:(.*?);/)[1];
-
-    // Lưu vào chrome.storage.local (không dùng sync vì quá lớn)
-    chrome.storage.local.set({
-      autoMessageImage: { base64, mimeType, name: file.name },
-    }, () => {
-      showImgPreview(dataUrl);
+  try {
+    const record = await imageStore.saveAutoMessageImage(file, {
+      imageId: AUTO_MESSAGE_IMAGE_ID,
+      name: file.name,
+      mimeType: file.type || 'image/png',
     });
-  };
-  reader.readAsDataURL(file);
+
+    await setLocalStorage({
+      autoMessageImageRef: createImageRef(record),
+    });
+    await removeLocalStorage(['autoMessageImage']);
+    showImgPreview(URL.createObjectURL(record.blob));
+  } catch (err) {
+    alert(`Không thể lưu ảnh: ${String(err.message || err)}`);
+    clearImgInput();
+  }
 });
 
-function showImgPreview(dataUrl) {
+function showImgPreview(imageUrl) {
+  revokePreviewUrl();
   const wrap = document.getElementById('img-preview-wrap');
   const img = document.getElementById('img-preview');
   const label = document.getElementById('img-upload-label');
-  img.src = dataUrl;
+  currentPreviewUrl = imageUrl;
+  img.src = imageUrl;
   wrap.style.display = 'flex';
   label.style.display = 'none';
 }
 
-document.getElementById('btn-remove-img').addEventListener('click', () => {
-  chrome.storage.local.remove(['autoMessageImage'], () => {
-    document.getElementById('img-preview').src = '';
-    document.getElementById('img-preview-wrap').style.display = 'none';
-    document.getElementById('img-upload-label').style.display = 'flex';
-    document.getElementById('img-file-input').value = '';
-  });
+document.getElementById('btn-remove-img').addEventListener('click', async () => {
+  try {
+    await imageStore.deleteAutoMessageImage(AUTO_MESSAGE_IMAGE_ID);
+  } catch (_) {}
+
+  await removeLocalStorage(['autoMessageImageRef', 'autoMessageImage']);
+  clearImgPreview();
 });
 
 // ─── Test Connection ──────────────────────────────────────────────────────────
@@ -206,4 +207,106 @@ async function testConnection() {
 document.getElementById('save-btn').addEventListener('click', saveSettings);
 document.getElementById('test-btn').addEventListener('click', testConnection);
 
-loadSettings();
+loadSettings().catch((err) => {
+  console.error('[ZaloExt] Failed to load settings:', err);
+});
+
+function getSyncStorage(defaults) {
+  return new Promise(resolve => chrome.storage.sync.get(defaults, resolve));
+}
+
+function getLocalStorage(keys) {
+  return new Promise(resolve => chrome.storage.local.get(keys, resolve));
+}
+
+function setLocalStorage(items) {
+  return new Promise(resolve => chrome.storage.local.set(items, resolve));
+}
+
+function removeLocalStorage(keys) {
+  return new Promise(resolve => chrome.storage.local.remove(keys, resolve));
+}
+
+function createImageRef(record) {
+  return {
+    imageId: record.id,
+    name: record.name,
+    mimeType: record.mimeType,
+    updatedAt: record.updatedAt,
+  };
+}
+
+async function loadImagePreview() {
+  const localData = await getLocalStorage(['autoMessageImageRef']);
+  const imageRef = localData.autoMessageImageRef;
+
+  if (!imageRef || !imageRef.imageId) {
+    clearImgPreview();
+    return;
+  }
+
+  try {
+    const record = await imageStore.getAutoMessageImage(imageRef.imageId);
+    if (!record || !record.blob) {
+      await removeLocalStorage(['autoMessageImageRef']);
+      clearImgPreview();
+      return;
+    }
+
+    showImgPreview(URL.createObjectURL(record.blob));
+  } catch (err) {
+    console.error('[ZaloExt] Failed to load auto message image:', err);
+    clearImgPreview();
+  }
+}
+
+async function migrateLegacyAutoMessageImage() {
+  const localData = await getLocalStorage(['autoMessageImage', 'autoMessageImageRef']);
+
+  if (localData.autoMessageImageRef || !localData.autoMessageImage || !localData.autoMessageImage.base64) {
+    return;
+  }
+
+  const legacyImage = localData.autoMessageImage;
+  const mimeType = legacyImage.mimeType || 'image/png';
+  const blob = base64ToBlob(legacyImage.base64, mimeType);
+  const record = await imageStore.saveAutoMessageImage(blob, {
+    imageId: AUTO_MESSAGE_IMAGE_ID,
+    name: legacyImage.name || 'image.png',
+    mimeType,
+  });
+
+  await setLocalStorage({
+    autoMessageImageRef: createImageRef(record),
+  });
+  await removeLocalStorage(['autoMessageImage']);
+}
+
+function base64ToBlob(base64, mimeType) {
+  const byteStr = atob(base64);
+  const arr = new Uint8Array(byteStr.length);
+
+  for (let i = 0; i < byteStr.length; i++) {
+    arr[i] = byteStr.charCodeAt(i);
+  }
+
+  return new Blob([arr], { type: mimeType });
+}
+
+function clearImgPreview() {
+  revokePreviewUrl();
+  document.getElementById('img-preview').src = '';
+  document.getElementById('img-preview-wrap').style.display = 'none';
+  document.getElementById('img-upload-label').style.display = 'flex';
+  clearImgInput();
+}
+
+function clearImgInput() {
+  document.getElementById('img-file-input').value = '';
+}
+
+function revokePreviewUrl() {
+  if (!currentPreviewUrl) return;
+  URL.revokeObjectURL(currentPreviewUrl);
+  currentPreviewUrl = '';
+}
