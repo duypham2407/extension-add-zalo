@@ -313,16 +313,15 @@
         setContentEditable(chatInput, msg.text.trim());
         await delay(300);
 
-        chatInput.dispatchEvent(new KeyboardEvent('keydown', {
-          key: 'Enter',
-          keyCode: 13,
-          which: 13,
-          bubbles: true,
-          cancelable: true,
-        }));
+        await submitCurrentDraft(chatInput);
 
         await delay(400);
         console.log(`[ZaloExt] Đã gửi: "${msg.text.slice(0, 30)}"`);
+      }
+
+      if ((!messages || messages.length === 0) && imageData && imageData.bytes && imageData.bytes.length > 0) {
+        await submitCurrentDraft(chatInput);
+        await delay(400);
       }
 
       return { messageError };
@@ -373,12 +372,7 @@
       );
 
       if (hasPreview) {
-        // Zalo nhận ảnh — gửi bằng Enter
-        chatInput.dispatchEvent(new KeyboardEvent('keydown', {
-          key: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true,
-        }));
-        await delay(600);
-        console.log('[ZaloExt] Đã gửi ảnh qua DataTransfer paste.');
+        console.log('[ZaloExt] Đã đính kèm ảnh qua DataTransfer paste.');
         return;
       }
 
@@ -398,11 +392,7 @@
           '.image-upload-preview, .thumb-wrapper, [class*="upload-preview"], [class*="attach-preview"]'
         );
         if (hasPreview2) {
-          chatInput.dispatchEvent(new KeyboardEvent('keydown', {
-            key: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true,
-          }));
-          await delay(600);
-          console.log('[ZaloExt] Đã gửi ảnh qua clipboard.write fallback.');
+          console.log('[ZaloExt] Đã đính kèm ảnh qua clipboard.write fallback.');
         } else {
           throw new Error('Cả hai phương pháp paste ảnh đều thất bại');
         }
@@ -413,6 +403,67 @@
     } catch (err) {
       throw err;
     }
+  }
+
+  async function submitCurrentDraft(chatInput) {
+    const sendButton = findSendButton(chatInput);
+
+    if (sendButton) {
+      simulateClick(sendButton);
+      return;
+    }
+
+    chatInput.focus();
+    chatInput.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'Enter',
+      keyCode: 13,
+      which: 13,
+      bubbles: true,
+      cancelable: true,
+    }));
+    chatInput.dispatchEvent(new KeyboardEvent('keyup', {
+      key: 'Enter',
+      keyCode: 13,
+      which: 13,
+      bubbles: true,
+      cancelable: true,
+    }));
+  }
+
+  function findSendButton(chatInput) {
+    const scope = chatInput.closest('footer, form, [class*="chat-input"], [class*="composer"], [class*="input"]') || document;
+    const selectors = [
+      'button[aria-label="Gửi"]',
+      'button[title="Gửi"]',
+      '[role="button"][aria-label="Gửi"]',
+      '[data-translate-title="Gửi"]',
+      '[data-translate-title="STR_SEND"]',
+      '[data-translate-inner="STR_SEND"]',
+      '[data-id*="send"]',
+      '[class*="send"]',
+    ];
+
+    for (const selector of selectors) {
+      const candidate = scope.querySelector(selector) || document.querySelector(selector);
+      if (candidate && isVisible(candidate)) {
+        return candidate;
+      }
+    }
+
+    const nearbyButtons = Array.from(scope.querySelectorAll('button, [role="button"]'));
+    return nearbyButtons.find((candidate) => {
+      if (!isVisible(candidate)) return false;
+      const label = [candidate.getAttribute('aria-label'), candidate.getAttribute('title'), candidate.textContent]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      return label.includes('gửi') || label.includes('send');
+    }) || null;
+  }
+
+  function isVisible(el) {
+    const rect = el.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
   }
 
   // ─── Message Listener ─────────────────────────────────────────────────────────
