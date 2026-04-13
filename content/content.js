@@ -1,5 +1,9 @@
-// content.js — DOM automation trên chat.zalo.me
+// content.js — DOM interaction trên chat.zalo.me
 // Chạy trong context của trang Zalo Web
+//
+// Phase 1: Bỏ auto message, bỏ auto image, bỏ greeting rewrite loop
+// Phase 2: Thêm detectRestrictionSignals()
+// Phase 3: Thêm prepareAddFriend() + executeAddFriend() cho assisted mode
 
 (function () {
   'use strict';
@@ -52,21 +56,19 @@
   function setReactValue(el, value) {
     if (!el) return;
     el.focus();
-    
-    // Trigger React's native setter
+
     const nativeSetter = Object.getOwnPropertyDescriptor(
       window[el.tagName === 'TEXTAREA' ? 'HTMLTextAreaElement' : 'HTMLInputElement'].prototype,
       'value'
     ).set;
-    
+
     nativeSetter.call(el, value);
 
-    // Fire all necessary events
     el.dispatchEvent(new Event('input', { bubbles: true }));
     el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Process', bubbles: true }));
     el.dispatchEvent(new KeyboardEvent('keyup',   { key: 'Process', bubbles: true }));
     el.dispatchEvent(new Event('change', { bubbles: true }));
-    
+
     el.blur();
   }
 
@@ -74,165 +76,242 @@
    * Đóng modal hiện tại (nhấn Escape)
    */
   function closeModal() {
-    document.body.click(); // Đôi khi click ra ngoài hiệu quả hơn
+    document.body.click();
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true }));
   }
 
-  /**
-   * Set nội dung cho contenteditable div (Zalo rich input)
-   * Dùng execCommand để React nhận được input event
-   */
-  function setContentEditable(el, text) {
-    if (!el) return;
-    el.focus();
-    // Xóa nội dung cũ
-    document.execCommand('selectAll', false, null);
-    document.execCommand('delete', false, null);
-    // Gõ text mới — React lắng nghe qua execCommand
-    document.execCommand('insertText', false, text);
+  function isVisible(el) {
+    const rect = el.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
   }
 
-  // ─── Main Automation Flow ─────────────────────────────────────────────────────
+  // ─── Restriction Detection (Phase 2) ─────────────────────────────────────────
 
-  async function addFriend(phone, greeting, autoMessages = [], autoMessageImage = null) {
-    const result = { status: 'error', zaloName: '', errorMsg: '', messageError: '' };
+  /**
+   * Quét DOM tìm dấu hiệu Zalo đang restrict/rate-limit tài khoản.
+   * Trả về mảng signals — nếu rỗng nghĩa là không phát hiện gì.
+   */
+  function detectRestrictionSignals() {
+    var signals = [];
+
+    // 1. Toast / snackbar / notification
+    var toasts = document.querySelectorAll(
+      '[class*="toast"], [class*="snackbar"], [class*="notification"], [class*="alert-msg"], [class*="warning"]'
+    );
+    toasts.forEach(function (t) {
+      var text = t.textContent.trim();
+      if (text && text.length > 0 && text.length < 500) {
+        signals.push({ type: 'toast', text: text, timestamp: Date.now() });
+      }
+    });
+
+    // 2. Restriction / rate-limit keywords (Vietnamese + English)
+    var restrictionPatterns = [
+      'tạm thời', 'giới hạn', 'không thể gửi', 'thử lại sau',
+      'bị hạn chế', 'bị chặn', 'quá nhiều', 'spam',
+      'temporarily', 'restricted', 'limit', 'too many',
+      'blocked', 'try again later', 'captcha'
+    ];
+
+    // Chỉ scan visible modal / overlay, không scan toàn bộ body (tốn)
+    var overlays = document.querySelectorAll(
+      '[class*="modal"], [class*="dialog"], [class*="overlay"], [class*="popup"], [role="dialog"], [role="alertdialog"]'
+    );
+    overlays.forEach(function (overlay) {
+      if (!isVisible(overlay)) return;
+      var text = overlay.innerText || '';
+      var lower = text.toLowerCase();
+      for (var i = 0; i < restrictionPatterns.length; i++) {
+        if (lower.includes(restrictionPatterns[i])) {
+          signals.push({ type: 'keyword_match', pattern: restrictionPatterns[i], context: text.slice(0, 200), timestamp: Date.now() });
+          break; // 1 match per overlay đủ rồi
+        }
+      }
+    });
+
+    // 3. Nút Kết bạn bị disabled
+    var disabledBtns = document.querySelectorAll(
+      '[data-translate-inner="STR_PROFILE_ADD_FRIEND"][disabled], ' +
+      '[data-translate-inner="STR_PROFILE_ADD_FRIEND"][aria-disabled="true"]'
+    );
+    if (disabledBtns.length > 0) {
+      signals.push({ type: 'disabled_button', selector: 'STR_PROFILE_ADD_FRIEND', timestamp: Date.now() });
+    }
+
+    return signals;
+  }
+
+  // ─── Core: Search Phone + Read Profile ────────────────────────────────────────
+  // Dùng chung cho cả auto mode và assisted mode
+
+  /**
+   * Mở modal "Thêm bạn", nhập SĐT, bấm tìm kiếm, chờ profile xuất hiện.
+   * Trả về { found, zaloName, hasAddButton, errorMsg }
+   */
+  async function searchAndOpenProfile(phone) {
+    var info = { found: false, zaloName: '', hasAddButton: false, errorMsg: '' };
+
+    // Bước 1: Mở modal "Thêm bạn"
+    var addFriendBtn = await waitForElement('[data-translate-title="Thêm bạn"], [title="Thêm bạn"]', 5000)
+      .catch(function () { return null; });
+
+    if (!addFriendBtn) {
+      info.errorMsg = 'Không tìm thấy nút Thêm bạn trên sidebar';
+      return info;
+    }
+    simulateClick(addFriendBtn);
+    await delay(600);
+
+    // Bước 2: Nhập số điện thoại
+    var phoneInput = await waitForElement('input[placeholder="Số điện thoại"], input.phone-i-input', 4000)
+      .catch(function () { return null; });
+
+    if (!phoneInput) {
+      info.errorMsg = 'Không tìm thấy input SĐT trong modal';
+      closeModal();
+      return info;
+    }
+
+    phoneInput.focus();
+    setReactValue(phoneInput, phone);
+    await delay(400);
+
+    // Bước 3: Click "Tìm kiếm"
+    var searchBtn = await waitForElement('div[data-translate-inner="STR_SEARCH"]', 3000)
+      .catch(function () { return null; });
+
+    if (!searchBtn) {
+      info.errorMsg = 'Không tìm thấy nút Tìm kiếm';
+      closeModal();
+      return info;
+    }
+    simulateClick(searchBtn);
+
+    // Bước 4: Chờ profile xuất hiện
+    await delay(1500);
+
+    var profileDetected = await Promise.race([
+      waitForElement('div[data-translate-inner="STR_PROFILE_ADD_FRIEND"]', 6000).then(function () { return 'add'; }),
+      waitForElement('[data-id="btn_UserProfile_EditAlias"]', 6000).then(function () { return 'profile'; }),
+    ]).catch(function () { return null; });
+
+    if (!profileDetected) {
+      info.found = false;
+      closeModal();
+      await delay(500);
+      return info;
+    }
+
+    info.found = true;
+
+    // Bước 5: Lấy tên thực tế
+    await delay(300);
+    var editBtn = document.querySelector('[data-id="btn_UserProfile_EditAlias"]');
+    if (editBtn && editBtn.previousElementSibling) {
+      info.zaloName = editBtn.previousElementSibling.getAttribute('title') ||
+                      editBtn.previousElementSibling.textContent.replace(/\u00A0/g, ' ').trim();
+    }
+
+    // Bước 6: Kiểm tra nút Kết bạn
+    var ketBanBtn = document.querySelector('div[data-translate-inner="STR_PROFILE_ADD_FRIEND"]');
+    info.hasAddButton = !!ketBanBtn;
+
+    return info;
+  }
+
+  /**
+   * Thực hiện bấm Kết bạn + điền lời chào + confirm.
+   * Gọi sau khi profile đã mở (searchAndOpenProfile thành công).
+   */
+  async function performAddFriend(greeting) {
+    var result = { success: false, errorMsg: '' };
+
+    // Bấm "Kết bạn" lần 1 — mở form điền lời chào
+    var ketBanBtn = document.querySelector('div[data-translate-inner="STR_PROFILE_ADD_FRIEND"]');
+    if (!ketBanBtn) {
+      result.errorMsg = 'Không tìm thấy nút Kết bạn';
+      return result;
+    }
+    simulateClick(ketBanBtn);
+    await delay(800);
+
+    // Điền lời chào
+    var textarea = await waitForElement('textarea[data-id="txt_AddFrd_Msg"]', 5000)
+      .catch(function () { return null; });
+
+    if (!textarea) {
+      result.errorMsg = 'Không tìm thấy ô lời chào';
+      return result;
+    }
+
+    var finalGreeting = greeting.slice(0, 150);
+    textarea.focus();
+    setReactValue(textarea, finalGreeting);
+
+    // Phase 1.2: Chờ đủ lâu cho Zalo fetch default greeting, rồi set lại đúng 1 lần nếu cần
+    await delay(1800);
+    if (textarea.value !== finalGreeting) {
+      console.log('[ZaloExt] Zalo overrode greeting, reverting once.');
+      setReactValue(textarea, finalGreeting);
+      await delay(500);
+    }
+
+    // Bấm "Kết bạn" lần 2 (confirm)
+    var confirmBtn = document.querySelector('div[data-translate-inner="STR_PROFILE_ADD_FRIEND"]');
+    if (!confirmBtn) {
+      result.errorMsg = 'Không tìm thấy nút Kết bạn confirm';
+      return result;
+    }
+    simulateClick(confirmBtn);
+    await delay(600);
+
+    result.success = true;
+    return result;
+  }
+
+  // ─── Auto Mode: addFriend (Phase 1 — simplified, no auto message) ─────────────
+
+  async function addFriend(phone, greeting) {
+    var result = { status: 'error', zaloName: '', errorMsg: '', restrictionSignals: [] };
 
     try {
-      // ── Bước 1: Mở modal "Thêm bạn" ─────────────────────────────────────────
-      // Tìm nút "Thêm bạn" trên sidebar (icon add friend)
-      const addFriendBtn = await waitForElement('[data-translate-title="Thêm bạn"], [title="Thêm bạn"]', 5000)
-        .catch(() => null);
+      var profile = await searchAndOpenProfile(phone);
 
-      if (!addFriendBtn) {
-        result.errorMsg = 'Không tìm thấy nút Thêm bạn trên sidebar';
-        return result;
-      }
-      simulateClick(addFriendBtn);
-      await delay(600);
-
-      // ── Bước 2: Nhập số điện thoại ──────────────────────────────────────────
-      const phoneInput = await waitForElement('input[placeholder="Số điện thoại"], input.phone-i-input', 4000)
-        .catch(() => null);
-
-      if (!phoneInput) {
-        result.errorMsg = 'Không tìm thấy input SĐT trong modal';
-        closeModal();
+      if (profile.errorMsg) {
+        result.errorMsg = profile.errorMsg;
         return result;
       }
 
-      phoneInput.focus();
-      setReactValue(phoneInput, phone);
-      await delay(400);
-
-      // ── Bước 3: Click "Tìm kiếm" ────────────────────────────────────────────
-      const searchBtn = await waitForElement('div[data-translate-inner="STR_SEARCH"]', 3000)
-        .catch(() => null);
-
-      if (!searchBtn) {
-        result.errorMsg = 'Không tìm thấy nút Tìm kiếm';
-        closeModal();
-        return result;
-      }
-      simulateClick(searchBtn);
-
-      // ── Bước 4: Chờ profile xuất hiện ────────────────────────────────────────
-      // Sau khi tìm kiếm thành công, modal chuyển sang profile
-      // Dấu hiệu: nút "Kết bạn" STR_PROFILE_ADD_FRIEND hoặc "Hủy kết bạn"
-      await delay(1500);
-
-      // Chờ tối đa 6s
-      const profileDetected = await Promise.race([
-        waitForElement('div[data-translate-inner="STR_PROFILE_ADD_FRIEND"]', 6000).then(() => 'add'),
-        waitForElement('[data-id="btn_UserProfile_EditAlias"]', 6000).then(() => 'profile'),
-      ]).catch(() => null);
-
-      if (!profileDetected) {
-        // Modal không chuyển → không tìm thấy
+      if (!profile.found) {
         result.status = 'not_found';
-        closeModal();
-        await delay(500);
         return result;
       }
 
-      // ── Bước 5: Lấy tên thực tế từ Zalo ──────────────────────────────────────
-      await delay(300);
-      const editBtn = document.querySelector('[data-id="btn_UserProfile_EditAlias"]');
-      if (editBtn && editBtn.previousElementSibling) {
-        result.zaloName = editBtn.previousElementSibling.getAttribute('title') ||
-                          editBtn.previousElementSibling.textContent.replace(/\u00A0/g, ' ').trim();
-      }
+      result.zaloName = profile.zaloName;
 
-      // ── Bước 6: Kiểm tra đã là bạn chưa ──────────────────────────────────────
-      const ketBanBtn = document.querySelector('div[data-translate-inner="STR_PROFILE_ADD_FRIEND"]');
-
-      if (!ketBanBtn) {
-        // Không có nút Kết bạn → đã là bạn
+      if (!profile.hasAddButton) {
         result.status = 'already_friend';
         closeModal();
         await delay(500);
         return result;
       }
 
-      // ── Bước 7: Click "Kết bạn" lần 1 ────────────────────────────────────────
-      simulateClick(ketBanBtn);
-      await delay(800);
+      var addResult = await performAddFriend(greeting);
 
-      // ── Bước 8: Điền lời chào ─────────────────────────────────────────────────
-      const textarea = await waitForElement('textarea[data-id="txt_AddFrd_Msg"]', 5000)
-        .catch(() => null);
-
-      if (!textarea) {
-        result.errorMsg = 'Không tìm thấy ô lời chào';
+      if (!addResult.success) {
+        result.errorMsg = addResult.errorMsg;
         closeModal();
         return result;
       }
 
-      const finalGreeting = greeting.slice(0, 150);
-
-      // Điền lần đầu tiên ngay lập tức
-      textarea.focus();
-      setReactValue(textarea, finalGreeting);
-      
-      // Delay & Retry Polling: Zalo có cơ chế fetch câu chào mặc định bất đồng bộ 
-      // và sẽ ghi đè vào textarea sau khoảng 0.5s - 1s.
-      // Dùng vòng lặp kiểm tra liên tục trong 1.5s để bảo vệ đoạn text của chúng ta.
-      for (let i = 0; i < 5; i++) {
-        await delay(300);
-        if (textarea.value !== finalGreeting) {
-          console.log(`[ZaloExt] Zalo overridden text detected at poll ${i+1}. Reverting...`);
-          setReactValue(textarea, finalGreeting);
-        }
-      }
-
-      // ── Bước 9: Click "Kết bạn" lần 2 (confirm) ──────────────────────────────
-      const ketBanBtnConfirm = document.querySelector('div[data-translate-inner="STR_PROFILE_ADD_FRIEND"]');
-
-      if (!ketBanBtnConfirm) {
-        result.errorMsg = 'Không tìm thấy nút Kết bạn confirm';
-        closeModal();
-        return result;
-      }
-      simulateClick(ketBanBtnConfirm);
-      await delay(600);
-
-      // Thành công — gửi lời mời thành công
       result.status = 'success';
       result.message = greeting.slice(0, 150);
 
-      closeModal();
-      await delay((autoMessages && autoMessages.length > 0) || autoMessageImage ? 1200 : 400);
+      // Detect restriction signals sau khi action hoàn tất
+      result.restrictionSignals = detectRestrictionSignals();
 
-      // ── Bước 10-12: Tự động nhắn tin (nếu có cấu hình) ─────────────────────
-      if ((autoMessages && autoMessages.length > 0) || autoMessageImage) {
-        try {
-          const postMessageResult = await handlePostSuccessMessaging(phone, autoMessages, autoMessageImage);
-          if (postMessageResult && postMessageResult.messageError) {
-            result.messageError = postMessageResult.messageError;
-          }
-        } catch (err) {
-          result.messageError = String(err.message || err);
-        }
-      }
+      closeModal();
+      await delay(400);
 
     } catch (err) {
       result.errorMsg = String(err.message || err);
@@ -242,238 +321,113 @@
     return result;
   }
 
-  // ─── Auto Message Flow ────────────────────────────────────────────────────────
+  // ─── Assisted Mode (Phase 3) ──────────────────────────────────────────────────
 
-  async function handlePostSuccessMessaging(phone, messages, imageData) {
-    let messageError = '';
+  /**
+   * PREPARE: Mở profile, đọc thông tin, KHÔNG bấm kết bạn.
+   * Dùng trong assisted mode — chờ operator xác nhận.
+   */
+  async function prepareAddFriend(phone) {
+    var result = { status: 'error', zaloName: '', errorMsg: '', ready: false, restrictionSignals: [] };
 
     try {
-      console.log(`[ZaloExt] Bắt đầu tự động nhắn tin cho SĐT: ${phone}`);
+      var profile = await searchAndOpenProfile(phone);
 
-      // ── Bước 10.1: Mở modal mở cửa sổ tìm kiếm ─────────────────────────────
-      const addFriendBtn = document.querySelector('[data-translate-title="Thêm bạn"], [title="Thêm bạn"], div[data-translate-title="STR_ADD_FRIEND_BTN"]');
-      if (!addFriendBtn) {
-        throw new Error('Không tìm thấy nút Thêm bạn để mở chat sau khi kết bạn');
+      if (profile.errorMsg) {
+        result.errorMsg = profile.errorMsg;
+        return result;
       }
-      simulateClick(addFriendBtn);
-      await delay(600);
 
-      // ── Bước 10.2: Điền SĐT ────────────────────────────────────────────────
-      const phoneInput = await waitForElement('input[placeholder="Số điện thoại"], input.phone-i-input', 4000).catch(() => null);
-      if (!phoneInput) {
-        throw new Error('Không tìm thấy input SĐT trong modal nhắn tin');
+      if (!profile.found) {
+        result.status = 'not_found';
+        return result;
       }
-      phoneInput.focus();
-      setReactValue(phoneInput, phone);
+
+      result.zaloName = profile.zaloName;
+
+      if (!profile.hasAddButton) {
+        result.status = 'already_friend';
+        closeModal();
+        await delay(500);
+        return result;
+      }
+
+      // KHÁC BIỆT: không bấm kết bạn, chỉ báo ready
+      result.status = 'ready_for_confirm';
+      result.ready = true;
+      result.restrictionSignals = detectRestrictionSignals();
+      // Không đóng modal — để operator thấy profile
+
+    } catch (err) {
+      result.errorMsg = String(err.message || err);
+      try { closeModal(); } catch (_) {}
+    }
+
+    return result;
+  }
+
+  /**
+   * EXECUTE: Bấm Kết bạn + điền lời chào + confirm.
+   * Gọi sau khi operator đã xác nhận qua popup.
+   */
+  async function executeAddFriend(greeting) {
+    var result = { status: 'error', zaloName: '', errorMsg: '', restrictionSignals: [] };
+
+    try {
+      var addResult = await performAddFriend(greeting);
+
+      if (!addResult.success) {
+        result.errorMsg = addResult.errorMsg;
+        closeModal();
+        return result;
+      }
+
+      result.status = 'success';
+      result.message = greeting.slice(0, 150);
+      result.restrictionSignals = detectRestrictionSignals();
+
+      closeModal();
       await delay(400);
 
-      // ── Bước 10.3: Tìm kiếm ────────────────────────────────────────────────
-      const searchBtn = await waitForElement('div[data-translate-inner="STR_SEARCH"]', 3000).catch(() => null);
-      if (!searchBtn) {
-        throw new Error('Không tìm thấy nút Tìm kiếm trong modal nhắn tin');
-      }
-      simulateClick(searchBtn);
-      await delay(1500); // Chờ list kết quả hiện ra
-
-      // ── Bước 10.4: Nhấp vào nút "Nhắn tin" trên kết quả tìm kiếm ───────────
-      const chatBtn = document.querySelector('div[data-translate-inner="STR_CHAT"]');
-      if (!chatBtn) {
-        throw new Error('Không tìm thấy nút Nhắn tin trên kết quả tìm kiếm');
-      }
-      simulateClick(chatBtn);
-      
-      // Khung chat đã mở, chờ 1 chút
-      await delay(1000);
-
-      // ── Bước 11: Chờ rich input xuất hiện ────────────────────────────────────
-      const chatInput = await waitForElement('div#richInput', 6000).catch(() => null);
-      if (!chatInput) {
-        throw new Error('Không tìm thấy ô chat để gửi tin nhắn tự động');
-      }
-
-      await delay(500);
-
-      // ── Bước 11.5: Gửi ảnh nếu có ─────────────────────────────────────────
-      if (imageData && imageData.bytes && imageData.bytes.length > 0) {
-        try {
-          await sendImage(chatInput, imageData);
-          await delay(800); // Chờ Zalo xử lý xong ảnh
-        } catch (err) {
-          messageError = String(err.message || err);
-        }
-      }
-
-      // ── Bước 12: Gửi lần lượt từng tin nhắn ─────────────────────────────────
-      for (const msg of messages) {
-        if (!msg.text || !msg.text.trim()) continue;
-
-        const waitMs = (parseInt(msg.delay, 10) || 1) * 1000;
-        await delay(waitMs);
-
-        setContentEditable(chatInput, msg.text.trim());
-        await delay(300);
-
-        await submitCurrentDraft(chatInput);
-
-        await delay(400);
-        console.log(`[ZaloExt] Đã gửi: "${msg.text.slice(0, 30)}"`);
-      }
-
-      if ((!messages || messages.length === 0) && imageData && imageData.bytes && imageData.bytes.length > 0) {
-        await submitCurrentDraft(chatInput);
-        await delay(400);
-      }
-
-      return { messageError };
     } catch (err) {
+      result.errorMsg = String(err.message || err);
       try { closeModal(); } catch (_) {}
-      throw err;
-    }
-  }
-
-  // ─── Send Image via Clipboard Paste ────────────────────────────────────────────
-
-  async function sendImage(chatInput, imageData) {
-    try {
-      if (!imageData || !imageData.bytes || !imageData.bytes.length) {
-        throw new Error('Thiếu dữ liệu ảnh để gửi');
-      }
-
-      const mimeType = imageData.mimeType || 'image/png';
-      const fileName = imageData.name || 'image.png';
-
-      // Convert byte array → Blob → File
-      const blob = new Blob([Uint8Array.from(imageData.bytes)], { type: mimeType });
-      const file = new File([blob], fileName, { type: mimeType });
-
-      // ─ Option B: DataTransfer ClipboardEvent paste ───────────────────────────
-      const dt = new DataTransfer();
-      dt.items.add(file);
-
-      chatInput.focus();
-
-      const pasteEvent = new ClipboardEvent('paste', {
-        clipboardData: dt,
-        bubbles: true,
-        cancelable: true,
-      });
-      const dispatched = chatInput.dispatchEvent(pasteEvent);
-
-      if (!dispatched) {
-        throw new Error('Zalo đã chặn sự kiện paste ảnh tự động');
-      }
-
-      // Kiểm tra nếu Zalo xử lý paste (preview xuất hiện)
-      await delay(1000);
-
-      // Kiểm tra preview: Zalo thường render .image-preview hoặc thumb
-      const hasPreview = document.querySelector(
-        '.image-upload-preview, .thumb-wrapper, [class*="upload-preview"], [class*="attach-preview"]'
-      );
-
-      if (hasPreview) {
-        console.log('[ZaloExt] Đã đính kèm ảnh qua DataTransfer paste.');
-        return;
-      }
-
-      // ─ Fallback Option A: navigator.clipboard.write() ─────────────────────────
-      console.log('[ZaloExt] DataTransfer paste không hoạt động, fallback sang clipboard.write...');
-      try {
-        await navigator.clipboard.write([
-          new ClipboardItem({ [mimeType]: blob }),
-        ]);
-
-        // Gửi Ctrl+V keyboard shortcut thật đến document
-        document.execCommand('paste');
-        await delay(1200);
-
-        // Check preview lần 2
-        const hasPreview2 = document.querySelector(
-          '.image-upload-preview, .thumb-wrapper, [class*="upload-preview"], [class*="attach-preview"]'
-        );
-        if (hasPreview2) {
-          console.log('[ZaloExt] Đã đính kèm ảnh qua clipboard.write fallback.');
-        } else {
-          throw new Error('Cả hai phương pháp paste ảnh đều thất bại');
-        }
-      } catch (clipErr) {
-        throw new Error(`Không thể gửi ảnh tự động: ${String(clipErr.message || clipErr)}`);
-      }
-
-    } catch (err) {
-      throw err;
-    }
-  }
-
-  async function submitCurrentDraft(chatInput) {
-    const sendButton = findSendButton(chatInput);
-
-    if (sendButton) {
-      simulateClick(sendButton);
-      return;
     }
 
-    chatInput.focus();
-    chatInput.dispatchEvent(new KeyboardEvent('keydown', {
-      key: 'Enter',
-      keyCode: 13,
-      which: 13,
-      bubbles: true,
-      cancelable: true,
-    }));
-    chatInput.dispatchEvent(new KeyboardEvent('keyup', {
-      key: 'Enter',
-      keyCode: 13,
-      which: 13,
-      bubbles: true,
-      cancelable: true,
-    }));
-  }
-
-  function findSendButton(chatInput) {
-    const scope = chatInput.closest('footer, form, [class*="chat-input"], [class*="composer"], [class*="input"]') || document;
-    const selectors = [
-      'button[aria-label="Gửi"]',
-      'button[title="Gửi"]',
-      '[role="button"][aria-label="Gửi"]',
-      '[data-translate-title="Gửi"]',
-      '[data-translate-title="STR_SEND"]',
-      '[data-translate-inner="STR_SEND"]',
-      '[data-id*="send"]',
-      '[class*="send"]',
-    ];
-
-    for (const selector of selectors) {
-      const candidate = scope.querySelector(selector) || document.querySelector(selector);
-      if (candidate && isVisible(candidate)) {
-        return candidate;
-      }
-    }
-
-    const nearbyButtons = Array.from(scope.querySelectorAll('button, [role="button"]'));
-    return nearbyButtons.find((candidate) => {
-      if (!isVisible(candidate)) return false;
-      const label = [candidate.getAttribute('aria-label'), candidate.getAttribute('title'), candidate.textContent]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase();
-      return label.includes('gửi') || label.includes('send');
-    }) || null;
-  }
-
-  function isVisible(el) {
-    const rect = el.getBoundingClientRect();
-    return rect.width > 0 && rect.height > 0;
+    return result;
   }
 
   // ─── Message Listener ─────────────────────────────────────────────────────────
-  chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  chrome.runtime.onMessage.addListener(function (msg, _sender, sendResponse) {
+    // Auto mode — full add friend flow (Phase 1: no auto message)
     if (msg.action === 'ADD_FRIEND') {
-      const { phone, greeting, autoMessages, autoMessageImage } = msg;
-      addFriend(phone, greeting, autoMessages, autoMessageImage).then((result) => {
-        sendResponse(result);
-      });
+      addFriend(msg.phone, msg.greeting).then(sendResponse);
       return true;
+    }
+
+    // Assisted mode — prepare only (Phase 3)
+    if (msg.action === 'PREPARE_ADD_FRIEND') {
+      prepareAddFriend(msg.phone).then(sendResponse);
+      return true;
+    }
+
+    // Assisted mode — execute after operator confirm (Phase 3)
+    if (msg.action === 'EXECUTE_ADD_FRIEND') {
+      executeAddFriend(msg.greeting).then(sendResponse);
+      return true;
+    }
+
+    // Close modal (used by skip / cancel)
+    if (msg.action === 'CLOSE_MODAL') {
+      closeModal();
+      sendResponse({ ok: true });
+      return false;
+    }
+
+    // On-demand restriction check
+    if (msg.action === 'DETECT_RESTRICTIONS') {
+      sendResponse({ signals: detectRestrictionSignals() });
+      return false;
     }
   });
 

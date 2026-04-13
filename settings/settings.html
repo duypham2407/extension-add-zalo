@@ -24,23 +24,55 @@
       <div class="row">
         <div class="field">
           <label>Delay tối thiểu (giây)</label>
-          <input type="number" id="delay-min" min="1" max="30" value="3" />
+          <input type="number" id="delay-min" min="5" max="120" value="15" />
         </div>
         <div class="field">
           <label>Delay tối đa (giây)</label>
-          <input type="number" id="delay-max" min="1" max="60" value="8" />
+          <input type="number" id="delay-max" min="10" max="300" value="45" />
         </div>
       </div>
       <div class="row">
         <div class="field">
           <label>Nghỉ dài sau N lần</label>
-          <input type="number" id="batch-size" min="5" max="100" value="10" />
+          <input type="number" id="batch-size" min="1" max="50" value="5" />
         </div>
         <div class="field">
           <label>Thời gian nghỉ dài (giây)</label>
-          <input type="number" id="batch-rest" min="30" max="600" value="90" />
+          <input type="number" id="batch-rest" min="60" max="900" value="300" />
         </div>
       </div>
+    </div>
+
+    <div class="section">
+      <label class="section-title">🛡️ Chính sách an toàn</label>
+      <p class="hint">Cấu hình chế độ hoạt động và giới hạn để giảm rủi ro bị Zalo hạn chế tài khoản.</p>
+      <div class="row">
+        <div class="field">
+          <label>Chế độ hoạt động</label>
+          <select id="operation-mode">
+            <option value="assisted">Có xác nhận (Assisted)</option>
+            <option value="auto">Tự động (Auto)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Giới hạn/phiên (session cap)</label>
+          <input type="number" id="session-cap" min="1" max="200" value="30" />
+        </div>
+      </div>
+      <div class="row">
+        <div class="field">
+          <label>Lỗi liên tiếp tối đa trước khi dừng</label>
+          <input type="number" id="max-consecutive-errors" min="1" max="20" value="3" />
+        </div>
+        <div class="field">
+          <label>Nhãn chiến dịch (tuỳ chọn)</label>
+          <input type="text" id="campaign-label" placeholder="vd: campaign-may-2026" />
+        </div>
+      </div>
+      <p class="hint mode-hint" id="mode-hint">
+        ℹ️ <strong>Assisted</strong>: Extension mở profile → bạn xác nhận/bỏ qua từng liên hệ trong popup. An toàn nhất.<br/>
+        ⚡ <strong>Auto</strong>: Extension tự động kết bạn nhưng không gửi tin nhắn tự động. Có hard-stop khi phát hiện restriction.
+      </p>
     </div>
 
     <div class="section">
@@ -57,32 +89,13 @@
       <span id="test-result"></span>
     </div>
 
-    <div class="section">
+    <!-- Auto-message section disabled (Phase 1: removed auto-message/image to reduce detection risk) -->
+    <div class="section section-disabled" id="auto-msg-section" style="display:none">
       <div class="section-header">
         <label class="section-title">💬 Tự động nhắn tin</label>
-        <label class="toggle-switch">
-          <input type="checkbox" id="auto-msg-enabled" />
-          <span class="toggle-track"><span class="toggle-thumb"></span></span>
-        </label>
+        <span class="badge-disabled">TẮT</span>
       </div>
-      <p class="hint">Sau khi gửi lời mời kết bạn thành công, tự động nhắn theo thứ tự: ảnh (nếu có) → các tin nhắn.</p>
-
-      <!-- Image Upload -->
-      <div class="img-upload-section">
-        <label class="img-upload-label" id="img-upload-label" for="img-file-input">
-          <span class="img-upload-icon">🖼️</span>
-          <span id="img-upload-text">Chọn ảnh gửi kèm (tùy chọn)</span>
-          <input type="file" id="img-file-input" accept="image/*" hidden />
-        </label>
-        <div id="img-preview-wrap" style="display:none">
-          <img id="img-preview" src="" alt="preview" />
-          <button class="btn-remove-img" id="btn-remove-img" title="Xóa ảnh">✕</button>
-        </div>
-      </div>
-
-      <div id="msg-list"></div>
-
-      <button class="btn-add-msg" id="btn-add-msg">＋ Thêm tin nhắn</button>
+      <p class="hint">Tính năng tự động nhắn tin đã bị tắt để giảm rủi ro bị Zalo hạn chế tài khoản.</p>
     </div>
 
     <div class="footer">
@@ -90,7 +103,6 @@
       <span id="save-msg"></span>
     </div>
   </div>
-  <script src="../lib/image-store.js"></script>
   <script src="settings.js"></script>
 </body>
 </html>

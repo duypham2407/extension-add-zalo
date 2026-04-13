@@ -144,6 +144,52 @@ button:hover {
   color: #f87171;
 }
 
+/* ─── Select dropdown ────────────────────────────────────────────────────────── */
+select {
+  width: 100%;
+  background: #0f1117;
+  border: 1px solid #2d3148;
+  color: #e2e8f0;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 0.9rem;
+  outline: none;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M6 8L1 3h10z' fill='%2364748b'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+}
+select:focus {
+  border-color: #0060af;
+}
+
+/* ─── Safety Policy Hint ─────────────────────────────────────────────────────── */
+.mode-hint {
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: #161827;
+  border-radius: 8px;
+  border: 1px solid #2d3148;
+  line-height: 1.6;
+}
+
+/* ─── Disabled Section ───────────────────────────────────────────────────────── */
+.section-disabled {
+  opacity: 0.5;
+}
+.badge-disabled {
+  background: #374151;
+  color: #94a3b8;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
 /* ─── Auto Message Section ──────────────────────────────────────────────────── */
 
 .section-header {

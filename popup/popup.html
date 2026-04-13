@@ -13,6 +13,48 @@
       <button class="settings-btn" id="open-settings" title="Cài đặt">⚙️</button>
     </header>
 
+    <!-- Hard Stop Banner (Phase 2) -->
+    <div class="hard-stop-banner" id="hard-stop-banner" style="display:none">
+      <div class="hard-stop-icon">🛑</div>
+      <div class="hard-stop-body">
+        <div class="hard-stop-title">Đã dừng khẩn cấp</div>
+        <div class="hard-stop-reason" id="hard-stop-reason"></div>
+      </div>
+      <button class="hard-stop-dismiss" id="hard-stop-dismiss" title="Đóng">✕</button>
+    </div>
+
+    <!-- Confirm Panel (Phase 3 — Assisted Mode) -->
+    <div class="confirm-panel" id="confirm-panel" style="display:none">
+      <div class="confirm-header">
+        <span class="confirm-icon">👤</span>
+        <span class="confirm-title">Xác nhận kết bạn</span>
+      </div>
+      <div class="confirm-body">
+        <div class="confirm-info">
+          <span class="confirm-label">SĐT:</span>
+          <span class="confirm-value" id="confirm-phone"></span>
+        </div>
+        <div class="confirm-info">
+          <span class="confirm-label">Tên Zalo:</span>
+          <span class="confirm-value" id="confirm-name"></span>
+        </div>
+        <div class="confirm-warning" id="confirm-warning" style="display:none">
+          ⚠️ <span id="confirm-warning-text"></span>
+        </div>
+      </div>
+      <div class="confirm-actions">
+        <button class="btn-confirm" id="btn-confirm">✅ Kết bạn</button>
+        <button class="btn-skip" id="btn-skip">⏭️ Bỏ qua</button>
+      </div>
+    </div>
+
+    <!-- Session Stats Bar (Phase 4) -->
+    <div class="session-stats" id="session-stats" style="display:none">
+      <span class="ss-item">📊 <span id="ss-actions">0</span>/<span id="ss-cap">30</span></span>
+      <span class="ss-sep">·</span>
+      <span class="ss-item ss-errors">💥 <span id="ss-errors">0</span> lỗi liên tiếp</span>
+    </div>
+
     <!-- Upload Section -->
     <div class="section" id="upload-section">
       <label class="upload-area" for="file-input" id="upload-label">
@@ -67,6 +109,23 @@
 
     <!-- Status message -->
     <div class="status-msg" id="status-msg"></div>
+
+    <!-- Log & Export Bar (Phase 4) -->
+    <div class="log-bar" id="log-bar">
+      <button class="btn-log" id="btn-show-log">📋 Nhật ký</button>
+      <button class="btn-export" id="btn-export-csv">📥 Xuất CSV</button>
+    </div>
+
+    <!-- Log Viewer Panel (Phase 4) -->
+    <div class="log-panel" id="log-panel" style="display:none">
+      <div class="log-panel-header">
+        <span>📋 Nhật ký hoạt động</span>
+        <button class="log-panel-close" id="log-panel-close">✕</button>
+      </div>
+      <div class="log-panel-body" id="log-panel-body">
+        <div class="log-empty">Chưa có dữ liệu</div>
+      </div>
+    </div>
   </div>
 
   <script src="../lib/xlsx.min.js"></script>
